@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Hive Manual Play</title>
+  <style>
+    body { background:#f0f0f0; display:flex; justify-content:center; align-items:center; height:100vh; margin:0; }
+    canvas { background:#ffffff; border:1px solid #333; touch-action:none; }
+  </style>
+</head>
+<body>
+  <canvas id="hive" width="1000" height="800"></canvas>
+  <script>
+    const canvas = document.getElementById('hive');
+    const ctx = canvas.getContext('2d');
+
+    const R = 35; // hexagon radius
+    const SQRT3 = Math.sqrt(3);
+
+    function drawHex(x, y, r, fillStyle, strokeStyle) {
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const angle = Math.PI / 180 * (60 * i - 30);
+        const px = x + r * Math.cos(angle);
+        const py = y + r * Math.sin(angle);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fillStyle = fillStyle;
+      ctx.fill();
+      ctx.strokeStyle = strokeStyle;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    function insideHex(px, py, hx, hy, r) {
+      // Quick circular hit‑test (good enough for dragging)
+      const dx = px - hx;
+      const dy = py - hy;
+      return Math.sqrt(dx * dx + dy * dy) <= r;
+    }
+
+    const emojis = {
+      Queen: '🐝',
+      Beetle: '🪲',
+      Spider: '🕷️',
+      Grasshopper: '🦗',
+      Ant: '🐜'
+    };
+
+    const pieces = [];
+    function addPieces(color) {
+      const fill = color === 'white' ? '#ffffff' : '#333333';
+      const stroke = '#000000';
+      const startX = color === 'white' ? 120 : 880;
+      let offsetY = 120;
+
+      function add(type, count) {
+        for (let i = 0; i < count; i++) {
+          pieces.push({ x: startX, y: offsetY, r: R, fill, stroke, emoji: emojis[type], type, color });
+          offsetY += R * 2.6;
+        }
+      }
+
+      add('Queen', 1);
+      add('Beetle', 2);
+      add('Spider', 2);
+      add('Grasshopper', 3);
+      add('Ant', 3);
+    }
+
+    addPieces('white');
+    addPieces('black');
+
+    let dragging = null;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+
+    function render() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      pieces.forEach(p => {
+        drawHex(p.x, p.y, p.r, p.fill, p.stroke);
+        ctx.font = '24px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = p.color === 'white' ? '#000000' : '#ffffff';
+        ctx.fillText(p.emoji, p.x, p.y + 2);
+      });
+      requestAnimationFrame(render);
+    }
+
+    render();
+
+    function getPieceAt(mx, my) {
+      for (let i = pieces.length - 1; i >= 0; i--) {
+        const p = pieces[i];
+        if (insideHex(mx, my, p.x, p.y, p.r)) {
+          return { piece: p, index: i };
+        }
+      }
+      return null;
+    }
+
+    function pointerPos(evt) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: (evt.touches ? evt.touches[0].clientX : evt.clientX) - rect.left,
+        y: (evt.touches ? evt.touches[0].clientY : evt.clientY) - rect.top
+      };
+    }
+
+    function startDrag(evt) {
+      const pos = pointerPos(evt);
+      const hit = getPieceAt(pos.x, pos.y);
+      if (hit) {
+        dragging = hit.piece;
+        dragOffsetX = pos.x - dragging.x;
+        dragOffsetY = pos.y - dragging.y;
+        // bring to front
+        pieces.splice(hit.index, 1);
+        pieces.push(dragging);
+      }
+    }
+
+    function doDrag(evt) {
+      if (dragging) {
+        const pos = pointerPos(evt);
+        dragging.x = pos.x - dragOffsetX;
+        dragging.y = pos.y - dragOffsetY;
+      }
+    }
+
+    function endDrag() { dragging = null; }
+
+    // Mouse events
+    canvas.addEventListener('mousedown', startDrag);
+    canvas.addEventListener('mousemove', doDrag);
+    canvas.addEventListener('mouseup', endDrag);
+    canvas.addEventListener('mouseleave', endDrag);
+
+    // Touch events for mobile friendliness
+    canvas.addEventListener('touchstart', evt => { evt.preventDefault(); startDrag(evt); });
+    canvas.addEventListener('touchmove', evt => { evt.preventDefault(); doDrag(evt); });
+    canvas.addEventListener('touchend', evt => { evt.preventDefault(); endDrag(evt); });
+  </script>
+</body>
+</html>
