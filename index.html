@@ -5,48 +5,19 @@
   <title>Hive Manual Play</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      background: #f0f0f0;
-      overflow: hidden;
-    }
-    canvas {
-      background: #ffffff;
-      border: 1px solid #333;
-      touch-action: none;
-      display: block;
-    }
-    /* ===== Overlay controls ===== */
-    #controls {
-      position: fixed;
-      top: 10px;
-      right: 10px; /* start on right side */
-      z-index: 10;
-      padding: 6px 10px;
-      border: 1px solid #666;
-      border-radius: 8px;
-      background: rgba(255,255,255,0.9);
-      font-family: sans-serif;
-      font-size: 14px;
-      user-select: none;
-      width: 180px;
-    }
-    #controls.collapsed { width: 40px; padding: 4px; text-align: center; }
-    #controls.collapsed #panelBody { display: none; }
-    #toggleBtn { cursor: pointer; font-weight: bold; }
-    #sizeSlider { width: 140px; }
+    html, body { margin:0; padding:0; width:100%; height:100%; display:flex; justify-content:center; align-items:center; background:#f0f0f0; overflow:hidden; }
+    canvas { background:#ffffff; border:1px solid #333; touch-action:none; display:block; }
+    /* Overlay controls */
+    #controls { position:fixed; top:10px; right:10px; z-index:10; padding:6px 10px; border:1px solid #666; border-radius:8px; background:rgba(255,255,255,0.9); font-family:sans-serif; font-size:14px; user-select:none; width:180px; }
+    #controls.collapsed { width:40px; padding:4px; text-align:center; }
+    #controls.collapsed #panelBody { display:none; }
+    #toggleBtn { cursor:pointer; font-weight:bold; }
+    #sizeSlider { width:140px; }
     label { display:block; margin-top:4px; cursor:pointer; }
     button { margin-top:4px; width:100%; }
   </style>
 </head>
 <body>
-  <!-- ===== Overlay widget ===== -->
   <div id="controls">
     <div id="toggleBtn">▼</div>
     <div id="panelBody">
@@ -60,216 +31,90 @@
     </div>
   </div>
 
-  <!-- ===== Play area ===== -->
   <canvas id="hive"></canvas>
 
   <script>
-    /* --------------------------------------------------
-       Canvas sizing & lock toggle
-    -------------------------------------------------- */
+    /* Canvas sizing */
     const canvas = document.getElementById('hive');
-    const ctx    = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d');
+
+    function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+    resizeCanvas();
 
     const lockToggle = document.getElementById('lockToggle');
     let locked = false;
+    window.addEventListener('resize', () => { if(!locked){ resizeCanvas(); applyBaseSize(); layoutPieces(); }});
+    lockToggle.addEventListener('change', ()=>{ locked=lockToggle.checked; if(!locked){ resizeCanvas(); applyBaseSize(); layoutPieces(); }});
 
-    function resizeCanvas () {
-      canvas.width  = window.innerWidth;
-      canvas.height = window.innerHeight;
-    }
-    resizeCanvas();
-
-    window.addEventListener('resize', () => {
-      if (locked) return;
-      resizeCanvas();
-      applyBaseSize();
-      layoutPieces();
-    });
-
-    lockToggle.addEventListener('change', () => {
-      locked = lockToggle.checked;
-      if (!locked) {
-        resizeCanvas();
-        applyBaseSize();
-        layoutPieces();
-      }
-    });
-
-    /* --------------------------------------------------
-       Collapsible controls
-    -------------------------------------------------- */
+    /* Collapsible panel */
     const controls = document.getElementById('controls');
-    const toggleBtn = document.getElementById('toggleBtn');
-    toggleBtn.addEventListener('click', () => {
-      controls.classList.toggle('collapsed');
-      toggleBtn.textContent = controls.classList.contains('collapsed') ? '▶' : '▼';
-    });
+    document.getElementById('toggleBtn').addEventListener('click',()=>{ controls.classList.toggle('collapsed'); document.getElementById('toggleBtn').textContent = controls.classList.contains('collapsed') ? '▶' : '▼'; });
 
-    /* --------------------------------------------------
-       Size slider widget
-    -------------------------------------------------- */
-    const slider  = document.getElementById('sizeSlider');
+    /* Size slider */
+    const slider = document.getElementById('sizeSlider');
     const sizeVal = document.getElementById('sizeVal');
+    let baseR = parseInt(slider.value,10)/2;  // slider width -> radius
+    let R = baseR;
+    function updateSizeDisplay(){ sizeVal.textContent = Math.round(R*2); }
+    slider.addEventListener('input', ()=>{ baseR=parseInt(slider.value,10)/2; applyBaseSize(); layoutPieces(); /* no quicksave on size change */ });
 
-    let baseR = parseInt(slider.value, 10) / 2; // base radius from slider
-    let R     = baseR;                          // active radius
-
-    function updateSizeDisplay() { sizeVal.textContent = Math.round(R * 2); }
-
-    slider.addEventListener('input', () => {
-      baseR = parseInt(slider.value, 10) / 2;
-      applyBaseSize();
-      layoutPieces();
-      quickSaveState();
-    });
-
-    /* --------------------------------------------------
-       Controls: snap, save, load save/quicksave
-    -------------------------------------------------- */
-    const snapToggle   = document.getElementById('snapToggle');
-    const saveBtn      = document.getElementById('saveBtn');
-    const loadSaveBtn  = document.getElementById('loadSaveBtn');
-    const loadQBtn     = document.getElementById('loadQBtn');
+    /* UI buttons */
+    const saveBtn = document.getElementById('saveBtn');
+    const loadSaveBtn = document.getElementById('loadSaveBtn');
+    const loadQBtn = document.getElementById('loadQBtn');
+    const snapToggle = document.getElementById('snapToggle');
 
     saveBtn.addEventListener('click', manualSaveState);
     loadSaveBtn.addEventListener('click', loadSaveState);
     loadQBtn.addEventListener('click', loadQuickState);
 
-    /* --------------------------------------------------
-       Constants & helpers
-    -------------------------------------------------- */
-    const MARGIN            = 20;
-    const COLUMN_SPACING_F  = 2.2;
-    const ROW_SPACING_F     = 2.6;
-    const emojis = { Queen:'🐝', Beetle:'🪲', Spider:'🕷️', Grasshopper:'🦗', Ant:'🐜' };
-    const pieces = [];
+    /* Constants */
+    const MARGIN=20, COL_F=2.2, ROW_F=2.6;
+    const emojis={Queen:'🐝',Beetle:'🪲',Spider:'🕷️',Grasshopper:'🦗',Ant:'🐜'};
+    const pieces=[];
 
-    function drawHex (x, y, r, fillStyle, strokeStyle) {
-      ctx.beginPath();
-      for (let i = 0; i < 6; i++) {
-        const ang = Math.PI / 180 * (60 * i - 30);
-        const px = x + r * Math.cos(ang);
-        const py = y + r * Math.sin(ang);
-        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-      ctx.fillStyle = fillStyle;
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = strokeStyle;
-      ctx.stroke();
-    }
+    /* Helpers */
+    const hexPath=(x,y,r)=>{ ctx.beginPath(); for(let i=0;i<6;i++){ const ang=Math.PI/180*(60*i-30); const px=x+r*Math.cos(ang); const py=y+r*Math.sin(ang); i?ctx.lineTo(px,py):ctx.moveTo(px,py);} ctx.closePath(); };
+    function drawHex(x,y,r,fill,stroke){ hexPath(x,y,r); ctx.fillStyle=fill; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle=stroke; ctx.stroke(); }
+    const insideHex=(mx,my,hx,hy,r)=>Math.hypot(mx-hx,my-hy)<=r;
 
-    function insideHex (mx, my, hx, hy, r) {
-      return Math.hypot(mx - hx, my - hy) <= r;
-    }
+    function makePiece(type,color,emoji,x=0,y=0){ return {type,color,emoji,fill:color==='white'?'#ffffff':'#333333',stroke:'#000000',r:R,x,y}; }
 
-    /* --------------------------------------------------
-       Build piece set
-    -------------------------------------------------- */
-    function makePiece(type,color,emoji,x=0,y=0){
-      return { type, color, emoji, fill: color==='white'? '#ffffff':'#333333', stroke:'#000000', r:R, x, y };
-    }
-
-    function initPieces(){
-      pieces.length = 0; // clear
-      const defs=[['Queen',1],['Beetle',2],['Spider',2],['Grasshopper',3],['Ant',3]];
-      defs.forEach(([type,cnt])=>{ for(let i=0;i<cnt;i++) pieces.push(makePiece(type,'white',emojis[type])); });
-      defs.forEach(([type,cnt])=>{ for(let i=0;i<cnt;i++) pieces.push(makePiece(type,'black',emojis[type])); });
-    }
+    function initPieces(){ pieces.length=0; [['Queen',1],['Beetle',2],['Spider',2],['Grasshopper',3],['Ant',3]].forEach(([t,c])=>{for(let i=0;i<c;i++)pieces.push(makePiece(t,'white',emojis[t]));}); [['Queen',1],['Beetle',2],['Spider',2],['Grasshopper',3],['Ant',3]].forEach(([t,c])=>{for(let i=0;i<c;i++)pieces.push(makePiece(t,'black',emojis[t]));}); }
     initPieces();
 
-    /* --------------------------------------------------
-       Size helper
-    -------------------------------------------------- */
-    function applyBaseSize(){ R = baseR; pieces.forEach(p=>p.r=R); }
+    function applyBaseSize(){ R=baseR; pieces.forEach(p=>p.r=R); }
 
-    /* --------------------------------------------------
-       Hex‑grid math for snapping (pointy‑top offset columns)
-    -------------------------------------------------- */
-    function hexSnap(x,y){
-      const colSpacing = R * COLUMN_SPACING_F;
-      const rowSpacing = R * ROW_SPACING_F;
-      const originCx = MARGIN + R;
-      const originCy = MARGIN + R;
-      const col = Math.round((x - originCx) / colSpacing);
-      const colParity = col & 1;
-      const baseY = originCy + (colParity ? rowSpacing/2 : 0);
-      const row = Math.round((y - baseY) / rowSpacing);
-      return {x: originCx + col*colSpacing, y: baseY + row*rowSpacing};
-    }
+    /* Hex grid snap */
+    function hexSnap(x,y){ const colSpacing=R*COL_F, rowSpacing=R*ROW_F; const originCx=MARGIN+R; const originCy=MARGIN+R; const col=Math.round((x-originCx)/colSpacing); const colParity=col&1; const baseY=originCy+(colParity?rowSpacing/2:0); const row=Math.round((y-baseY)/rowSpacing); return {x:originCx+col*colSpacing,y:baseY+row*rowSpacing}; }
 
-    /* --------------------------------------------------
-       Layout initial positions
-    -------------------------------------------------- */
-    function layoutGroup(arr,startTop){
-      const colSpacing = R*COLUMN_SPACING_F;
-      const rowSpacing = R*ROW_SPACING_F;
-      let col=0;
-      let x = MARGIN+R;
-      let y = startTop? (MARGIN+R) : (canvas.height - MARGIN - R);
-      const limitTop = MARGIN+R;
-      const limitBot = canvas.height - MARGIN - R;
-      const halfTop  = canvas.height/2 - MARGIN;
-      const halfBot  = canvas.height/2 + MARGIN;
-      arr.forEach(p=>{
-        if(startTop){ if(y+R>halfTop){ col++; x=MARGIN+R+col*colSpacing; y=limitTop; } }
-        else{ if(y-R<halfBot){ col++; x=MARGIN+R+col*colSpacing; y=limitBot; } }
-        if(x+R>canvas.width-MARGIN){ const maxCols=Math.floor((canvas.width-2*MARGIN)/colSpacing); const shrink=(canvas.width-2*MARGIN)/((maxCols+1)*colSpacing); R*=shrink; pieces.forEach(pc=>pc.r=R); return layoutPieces(); }
-        p.x=x; p.y=y; y += rowSpacing*(startTop?1:-1); });
-    }
+    /* Layout */
+    function layoutGroup(arr,top){ const colSpacing=R*COL_F, rowSpacing=R*ROW_F; let col=0,x=MARGIN+R,y=top?(MARGIN+R):(canvas.height-MARGIN-R); const limitTop=MARGIN+R,limitBot=canvas.height-MARGIN-R,halfTop=canvas.height/2-MARGIN,halfBot=canvas.height/2+MARGIN; arr.forEach(p=>{ if(top? y+R>halfTop : y-R<halfBot){ col++; x=MARGIN+R+col*colSpacing; y=top?limitTop:limitBot; } if(x+R>canvas.width-MARGIN){ const maxCols=Math.floor((canvas.width-2*MARGIN)/colSpacing); const shrink=(canvas.width-2*MARGIN)/((maxCols+1)*colSpacing); R*=shrink; pieces.forEach(pc=>pc.r=R); return layoutPieces(); } p.x=x; p.y=y; y+=rowSpacing*(top?1:-1);} ); }
     function layoutPieces(){ const whites=pieces.filter(p=>p.color==='white'); const blacks=pieces.filter(p=>p.color==='black'); layoutGroup(whites,true); layoutGroup(blacks,false); updateSizeDisplay(); }
     layoutPieces();
 
-    /* --------------------------------------------------
-       Save / Load helpers using cookies
-    -------------------------------------------------- */
-    function writeCookie(key,obj){ document.cookie=`${key}=${encodeURIComponent(JSON.stringify(obj))}; max-age=31536000; path=/`; }
-    function readCookie(key){ const m=document.cookie.match(new RegExp('(?:^|; )'+key+'=([^;]+)')); return m? JSON.parse(decodeURIComponent(m[1])):null; }
+    /* Save / Load */
+    function writeCookie(k,obj){ document.cookie=`${k}=${encodeURIComponent(JSON.stringify(obj))}; max-age=31536000; path=/`; }
+    function readCookie(k){ const m=document.cookie.match(new RegExp('(?:^|; )'+k+'=([^;]+)')); return m?JSON.parse(decodeURIComponent(m[1])):null; }
+    function getState(){ return { width: baseR*2, pieces: pieces.map(({type,color,emoji,x,y})=>({type,color,emoji,x,y})) }; }
+    function rebuild(data){ if(!data) return; if(data.width){ baseR=data.width/2; slider.value=data.width; applyBaseSize(); } if(data.pieces){ pieces.length=0; data.pieces.forEach(o=>pieces.push(makePiece(o.type,o.color,o.emoji,o.x,o.y))); } updateSizeDisplay(); }
+    function manualSaveState(){ writeCookie('hiveState',getState()); alert('Game saved!'); }
+    function loadSaveState(){ const d=readCookie('hiveState'); if(!d){alert('No saved game found.');return;} rebuild(d); }
+    function quickSaveState(){ writeCookie('hiveQState',getState()); }
+    function loadQuickState(){ const d=readCookie('hiveQState'); if(!d){alert('No quicksave found.');return;} rebuild(d); }
 
-    function getState(){ return { size: baseR*2, pieces: pieces.map(p=>({type:p.type,color:p.color,emoji:p.emoji,x:p.x,y:p.y})) }; }
+    /* Drag */
+    let dragging=null,offX=0,offY=0;
+    function pointer(evt){ const r=canvas.getBoundingClientRect(); return {x:(evt.touches?evt.touches[0].clientX:evt.clientX)-r.left,y:(evt.touches?evt.touches[0].clientY:evt.clientY)-r.top}; }
+    function hit(mx,my){ for(let i=pieces.length-1;i>=0;i--){ if(insideHex(mx,my,pieces[i].x,pieces[i].y,pieces[i].r)) return {piece:pieces[i],idx:i}; } }
+    function startDrag(e){ const pos=pointer(e); const h=hit(pos.x,pos.y); if(h){ dragging=h.piece; offX=pos.x-dragging.x; offY=pos.y-dragging.y; pieces.splice(h.idx,1); pieces.push(dragging);} }
+    function moveDrag(e){ if(dragging){ const p=pointer(e); dragging.x=p.x-offX; dragging.y=p.y-offY; }}
+    function endDrag(){ if(dragging){ if(snapToggle.checked){ const s=hexSnap(dragging.x,dragging.y); dragging.x=s.x; dragging.y=s.y; } dragging=null; quickSaveState(); }}
+    canvas.addEventListener('mousedown',startDrag); canvas.addEventListener('mousemove',moveDrag); canvas.addEventListener('mouseup',endDrag); canvas.addEventListener('mouseleave',endDrag);
+    canvas.addEventListener('touchstart',e=>{e.preventDefault();startDrag(e);}); canvas.addEventListener('touchmove',e=>{e.preventDefault();moveDrag(e);}); canvas.addEventListener('touchend',e=>{e.preventDefault();endDrag();});
 
-    function rebuildFromState(data){
-      if(!data || !data.pieces) return;
-      baseR = data.size? data.size/2 : baseR;
-      slider.value = baseR*2;
-      applyBaseSize();
-      pieces.length = 0;
-      data.pieces.forEach(obj=>{ pieces.push(makePiece(obj.type,obj.color,obj.emoji,obj.x,obj.y)); });
-      updateSizeDisplay();
-    }
-
-    function manualSaveState(){ writeCookie('hiveState', getState()); alert('Game saved!'); }
-    function loadSaveState(){ const data=readCookie('hiveState'); if(!data){alert('No saved game found.'); return;} rebuildFromState(data); }
-
-    function quickSaveState(){ writeCookie('hiveQState', getState()); }
-    function loadQuickState(){ const data=readCookie('hiveQState'); if(!data){alert('No quicksave found.'); return;} rebuildFromState(data); }
-
-    /* --------------------------------------------------
-       Drag interactions
-    -------------------------------------------------- */
-    let dragging=null, offX=0, offY=0;
-    function pointerPos(evt){ const rect=canvas.getBoundingClientRect(); return {x:(evt.touches?evt.touches[0].clientX:evt.clientX)-rect.left, y:(evt.touches?evt.touches[0].clientY:evt.clientY)-rect.top}; }
-    function pieceAt(mx,my){ for(let i=pieces.length-1;i>=0;i--){ const p=pieces[i]; if(insideHex(mx,my,p.x,p.y,p.r)) return {piece:p,index:i}; } return null; }
-
-    function startDrag(evt){ const pos=pointerPos(evt); const hit=pieceAt(pos.x,pos.y); if(hit){ dragging=hit.piece; offX=pos.x-dragging.x; offY=pos.y-dragging.y; pieces.splice(hit.index,1); pieces.push(dragging);} }
-    function doDrag(evt){ if(!dragging) return; const pos=pointerPos(evt); dragging.x=pos.x-offX; dragging.y=pos.y-offY; }
-    function endDrag(){ if(dragging){ if(snapToggle.checked){ const snap=hexSnap(dragging.x,dragging.y); dragging.x=snap.x; dragging.y=snap.y; } dragging=null; quickSaveState(); } }
-
-    canvas.addEventListener('mousedown',startDrag);
-    canvas.addEventListener('mousemove',doDrag);
-    canvas.addEventListener('mouseup',endDrag);
-    canvas.addEventListener('mouseleave',endDrag);
-    canvas.addEventListener('touchstart',e=>{e.preventDefault();startDrag(e);});
-    canvas.addEventListener('touchmove',e=>{e.preventDefault();doDrag(e);});
-    canvas.addEventListener('touchend',e=>{e.preventDefault();endDrag();});
-
-    /* --------------------------------------------------
-       Render loop
-    -------------------------------------------------- */
-    function render(){ ctx.clearRect(0,0,canvas.width,canvas.height); pieces.forEach(p=>{ drawHex(p.x,p.y,p.r,p.fill,p.stroke); ctx.font=`${Math.round(p.r*1.2)}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle=p.color==='white'? '#000':'#fff'; ctx.fillText(p.emoji,p.x,p.y+1); }); requestAnimationFrame(render); }
-    updateSizeDisplay();
-    render();
+    /* Render */
+    (function loop(){ ctx.clearRect(0,0,canvas.width,canvas.height); pieces.forEach(p=>{ drawHex(p.x,p.y,p.r,p.fill,p.stroke); ctx.font=`${Math.round(p.r*1.2)}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle=p.color==='white'?'#000':'#fff'; ctx.fillText(p.emoji,p.x,p.y+1); }); requestAnimationFrame(loop); })();
   </script>
 </body>
 </html>
